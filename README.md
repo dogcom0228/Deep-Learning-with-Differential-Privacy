@@ -90,7 +90,3 @@ python cifar10.py --non-private --device cuda
 - metrics.json
 - best.pt
 - last.pt
-
-## 舊版程式碼
-
-根目錄保留的 tensorflow_privacy/ 目錄僅作為歷史參考，不再是主要訓練路徑。新的訓練入口已全面切換到 PyTorch / Opacus。
