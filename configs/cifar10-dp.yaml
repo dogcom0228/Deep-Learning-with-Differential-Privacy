@@ -1,0 +1,53 @@
+dataset:
+  name: cifar10
+  root: data
+  download: true
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  augment: true
+
+model:
+  name: cifar_resnet18
+  num_classes: 10
+  width: 32
+  dropout: 0.0
+
+optimizer:
+  name: sgd
+  lr: 0.2
+  momentum: 0.9
+  weight_decay: 5.0e-4
+  nesterov: true
+
+scheduler:
+  name: cosine
+  warmup_epochs: 5
+  min_lr: 1.0e-4
+
+privacy:
+  enabled: true
+  noise_multiplier: 1.3
+  max_grad_norm: 1.0
+  delta: 1.0e-5
+  poisson_sampling: true
+  clipping: flat
+  grad_sample_mode: ghost
+  secure_mode: false
+
+runtime:
+  device: auto
+  compile: false
+  allow_tf32: true
+  channels_last: true
+  amp: false
+  deterministic: false
+
+training:
+  epochs: 50
+  batch_size: 512
+  eval_batch_size: 1024
+  seed: 42
+  log_every: 20
+  output_dir: results
+  experiment_name: cifar10-dp-sgd

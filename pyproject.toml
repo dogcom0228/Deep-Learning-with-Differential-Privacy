@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deep-learning-with-differential-privacy"
+version = "0.1.0"
+description = "Modern PyTorch and Opacus reimplementation of Deep Learning with Differential Privacy"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "numpy>=1.26",
+  "PyYAML>=6.0.2",
+  "tqdm>=4.66.5",
+  "torch>=2.11",
+  "torchvision>=0.26",
+  "opacus>=1.5.4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.11",
+]
+
+[project.scripts]
+dp-sgd = "dp_sgd.cli:entrypoint"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

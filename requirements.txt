@@ -1,2 +1,7 @@
-tensorflow==2.0.0
-tensorflow-privacy==0.1.0
+--extra-index-url https://download.pytorch.org/whl/cu130
+numpy>=1.26
+PyYAML>=6.0.2
+tqdm>=4.66.5
+torch>=2.11
+torchvision>=0.26
+opacus>=1.5.4
