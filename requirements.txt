@@ -5,3 +5,5 @@ tqdm>=4.66.5
 torch>=2.11
 torchvision>=0.26
 opacus>=1.5.4
+matplotlib>=3.9
+pandas>=2.2
