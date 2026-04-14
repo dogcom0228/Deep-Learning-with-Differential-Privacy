@@ -15,7 +15,7 @@ model:
 
 optimizer:
   name: sgd
-  lr: 0.05
+  lr: 0.5
   momentum: 0.9
   weight_decay: 0.0
   nesterov: false
@@ -27,7 +27,7 @@ scheduler:
 
 privacy:
   enabled: true
-  noise_multiplier: 1.1
+  noise_multiplier: 1.0
   max_grad_norm: 1.0
   delta: 1.0e-5
   poisson_sampling: true
@@ -45,7 +45,7 @@ runtime:
 
 training:
   epochs: 40
-  batch_size: 512
+  batch_size: 4096
   eval_batch_size: 1024
   seed: 42
   log_every: 20
