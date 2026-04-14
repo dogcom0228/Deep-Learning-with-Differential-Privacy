@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import logging
 import warnings
 from contextlib import nullcontext
@@ -57,7 +58,14 @@ def _unwrap_model(model: nn.Module) -> nn.Module:
 
 def _autocast_context(enabled: bool, device: torch.device):
     if enabled:
-        return torch.autocast(device_type=device.type, dtype=torch.float16)
+        # Prefer bfloat16 on Ampere+ (RTX 30/40 series): same exponent range as
+        # float32 so no overflow risk, and natively accelerated on these GPUs.
+        dtype = (
+            torch.bfloat16
+            if device.type == "cuda" and torch.cuda.is_bf16_supported()
+            else torch.float16
+        )
+        return torch.autocast(device_type=device.type, dtype=dtype)
     return nullcontext()
 
 
@@ -101,9 +109,6 @@ class _CudaPrefetcher:
         return len(self._loader)
 
 
-_PROGRESS_SYNC_INTERVAL = 10  # sync GPU→CPU for progress bar every N steps
-
-
 def _train_one_epoch(
     model: nn.Module,
     data_loader: DataLoader,
@@ -113,6 +118,7 @@ def _train_one_epoch(
     channels_last: bool,
     use_amp: bool,
     scaler: torch.amp.GradScaler | None,
+    log_every: int = 10,
 ) -> dict[str, float]:
     model.train()
     use_prefetch = device.type == "cuda"
@@ -145,7 +151,7 @@ def _train_one_epoch(
         total_correct += (logits.detach().argmax(dim=1) == targets).sum()
         total_samples += batch_size
 
-        if step % _PROGRESS_SYNC_INTERVAL == 0:
+        if step % log_every == 0:
             progress.set_postfix(loss=f"{loss.item():.4f}")
 
     return {
@@ -202,17 +208,11 @@ def run_experiment(config: ExperimentConfig) -> Path:
     device = _resolve_device(config.runtime.device)
     _configure_backend(config, device)
 
-    if config.runtime.amp and config.privacy.enabled:
-        LOGGER.warning("AMP is disabled for DP-SGD runs to avoid unsupported mixed-precision edge cases.")
-    use_amp = config.runtime.amp and device.type == "cuda" and not config.privacy.enabled
-    scaler = torch.amp.GradScaler("cuda", enabled=use_amp) if device.type == "cuda" else None
-
     # Opacus per-sample gradient hooks are incompatible with:
     #   - multi-process DataLoader workers  (cudaErrorNotReady / CUDA race)
     #   - channels_last memory format       (non-contiguous strides break einsum)
     #   - grad_sample_mode="hooks" at large batch sizes (materialises [B, ...] grad tensors → OOM)
     # Override all three for private runs.
-    import dataclasses
     if config.privacy.enabled:
         dp_workers = min(config.dataset.num_workers, 4)
         safe_dataset_config = dataclasses.replace(
@@ -235,8 +235,23 @@ def run_experiment(config: ExperimentConfig) -> Path:
             privacy=safe_privacy,
         )
         LOGGER.info(
-            "DP mode: forcing num_workers=0, pin_memory=False, channels_last=False for Opacus compatibility."
+            "DP mode: num_workers capped to %d, pin_memory=False, channels_last=False for Opacus compatibility.",
+            dp_workers,
         )
+
+    # Ghost clipping + bfloat16 autocast is NOT safe with Opacus 1.5.x:
+    # capture_backprops_hook requires activations and backprops to share the same
+    # dtype; autocast breaks this invariant (RuntimeError: expected scalar type
+    # BFloat16 but found Float).  Disable AMP for all DP runs unconditionally.
+    if config.runtime.amp and config.privacy.enabled:
+        LOGGER.warning(
+            "AMP is disabled: Opacus ghost clipping is incompatible with bfloat16 autocast."
+        )
+    use_amp = config.runtime.amp and device.type == "cuda" and not config.privacy.enabled
+    # GradScaler is only needed for float16; bfloat16 has the same exponent range
+    # as float32 so loss scaling is unnecessary and the scaler would be a no-op.
+    use_bf16 = use_amp and device.type == "cuda" and torch.cuda.is_bf16_supported()
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp and not use_bf16) if device.type == "cuda" else None
     data_loaders = build_dataloaders(config.dataset, config.training, device.type)
 
     model = build_model(config.model, config.dataset.name)
@@ -283,6 +298,7 @@ def run_experiment(config: ExperimentConfig) -> Path:
             channels_last=config.runtime.channels_last,
             use_amp=use_amp,
             scaler=scaler,
+            log_every=config.training.log_every,
         )
         eval_metrics = _evaluate(
             model=model,

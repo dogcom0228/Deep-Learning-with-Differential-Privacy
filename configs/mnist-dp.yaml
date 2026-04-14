@@ -15,15 +15,15 @@ model:
 
 optimizer:
   name: sgd
-  lr: 0.15
+  lr: 0.05
   momentum: 0.9
   weight_decay: 0.0
   nesterov: false
 
 scheduler:
   name: cosine
-  warmup_epochs: 1
-  min_lr: 0.001
+  warmup_epochs: 5
+  min_lr: 5.0e-4
 
 privacy:
   enabled: true
@@ -44,9 +44,9 @@ runtime:
   deterministic: false
 
 training:
-  epochs: 15
-  batch_size: 256
-  eval_batch_size: 512
+  epochs: 40
+  batch_size: 512
+  eval_batch_size: 1024
   seed: 42
   log_every: 20
   output_dir: results

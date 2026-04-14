@@ -50,7 +50,7 @@ def attach_privacy(
         accountant="rdp",
         secure_mode=privacy_config.secure_mode,
     )
-    private_result = privacy_engine.make_private(
+    result = privacy_engine.make_private(
         module=model,
         optimizer=optimizer,
         data_loader=train_loader,
@@ -61,10 +61,12 @@ def attach_privacy(
         grad_sample_mode=privacy_config.grad_sample_mode,
     )
 
-    if len(private_result) == 3:
-        private_model, private_optimizer, private_loader = private_result
+    # Opacus 1.x returns a 3-tuple (model, optimizer, loader) for hooks/flat mode
+    # but a 4-tuple (model, optimizer, criterion_wrapper, loader) for ghost clipping.
+    if len(result) == 4:
+        private_model, private_optimizer, _, private_loader = result
     else:
-        private_model, private_optimizer, _, private_loader = private_result
+        private_model, private_optimizer, private_loader = result
 
     return PrivacyArtifacts(
         model=private_model,
