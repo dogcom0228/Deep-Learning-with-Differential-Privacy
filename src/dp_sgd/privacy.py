@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from opacus import PrivacyEngine
 from opacus.validators import ModuleValidator
@@ -15,6 +16,7 @@ from .config import PrivacyConfig
 class PrivacyArtifacts:
     model: nn.Module
     optimizer: Optimizer
+    criterion: Any | None
     train_loader: DataLoader
     privacy_engine: PrivacyEngine | None
 
@@ -42,6 +44,7 @@ def attach_privacy(
         return PrivacyArtifacts(
             model=model,
             optimizer=optimizer,
+                criterion=None,
             train_loader=train_loader,
             privacy_engine=None,
         )
@@ -50,7 +53,7 @@ def attach_privacy(
         accountant="rdp",
         secure_mode=privacy_config.secure_mode,
     )
-    result = privacy_engine.make_private(
+    result: Any = privacy_engine.make_private(
         module=model,
         optimizer=optimizer,
         data_loader=train_loader,
@@ -63,14 +66,16 @@ def attach_privacy(
 
     # Opacus 1.x returns a 3-tuple (model, optimizer, loader) for hooks/flat mode
     # but a 4-tuple (model, optimizer, criterion_wrapper, loader) for ghost clipping.
+    criterion_wrapper = None
     if len(result) == 4:
-        private_model, private_optimizer, _, private_loader = result
+        private_model, private_optimizer, criterion_wrapper, private_loader = result
     else:
         private_model, private_optimizer, private_loader = result
 
     return PrivacyArtifacts(
         model=private_model,
         optimizer=private_optimizer,
+        criterion=criterion_wrapper,
         train_loader=private_loader,
         privacy_engine=privacy_engine,
     )

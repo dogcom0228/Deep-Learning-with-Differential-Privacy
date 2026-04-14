@@ -18,12 +18,12 @@ optimizer:
   lr: 0.5
   momentum: 0.9
   weight_decay: 0.0
-  nesterov: false
+  nesterov: true
 
 scheduler:
   name: cosine
   warmup_epochs: 5
-  min_lr: 5.0e-4
+  min_lr: 1.0e-4
 
 privacy:
   enabled: true
@@ -44,7 +44,7 @@ runtime:
   deterministic: false
 
 training:
-  epochs: 40
+  epochs: 100
   batch_size: 4096
   eval_batch_size: 1024
   seed: 42

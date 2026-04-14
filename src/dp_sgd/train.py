@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import torch
 from torch import nn
+from torch.amp.grad_scaler import GradScaler
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
@@ -113,17 +114,17 @@ def _train_one_epoch(
     model: nn.Module,
     data_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
-    criterion: nn.Module,
+    criterion: Any,
     device: torch.device,
     channels_last: bool,
     use_amp: bool,
-    scaler: torch.amp.GradScaler | None,
+    scaler: GradScaler | None,
     log_every: int = 10,
 ) -> dict[str, float]:
     model.train()
     use_prefetch = device.type == "cuda"
-    total_loss = torch.zeros(1, device=device) if use_prefetch else torch.zeros(1)
-    total_correct = torch.zeros(1, device=device, dtype=torch.long) if use_prefetch else torch.zeros(1, dtype=torch.long)
+    total_loss = 0.0
+    total_correct = 0
     total_samples = 0
 
     loader: Any = _CudaPrefetcher(data_loader, device, channels_last) if use_prefetch else data_loader
@@ -147,16 +148,17 @@ def _train_one_epoch(
             optimizer.step()
 
         batch_size = targets.size(0)
-        total_loss += loss.detach() * batch_size
-        total_correct += (logits.detach().argmax(dim=1) == targets).sum()
+        loss_value = float(loss.item())
+        total_loss += loss_value * batch_size
+        total_correct += int((logits.detach().argmax(dim=1) == targets).sum().item())
         total_samples += batch_size
 
         if step % log_every == 0:
-            progress.set_postfix(loss=f"{loss.item():.4f}")
+            progress.set_postfix(loss=f"{loss_value:.4f}")
 
     return {
-        "loss": total_loss.item() / max(1, total_samples),
-        "accuracy": total_correct.item() / max(1, total_samples),
+        "loss": total_loss / max(1, total_samples),
+        "accuracy": total_correct / max(1, total_samples),
     }
 
 
@@ -171,8 +173,8 @@ def _evaluate(
 ) -> dict[str, float]:
     model.eval()
     use_prefetch = device.type == "cuda"
-    total_loss = torch.zeros(1, device=device) if use_prefetch else torch.zeros(1)
-    total_correct = torch.zeros(1, device=device, dtype=torch.long) if use_prefetch else torch.zeros(1, dtype=torch.long)
+    total_loss = 0.0
+    total_correct = 0
     total_samples = 0
 
     loader: Any = _CudaPrefetcher(data_loader, device, channels_last) if use_prefetch else data_loader
@@ -186,13 +188,13 @@ def _evaluate(
             loss = criterion(logits, targets)
 
         batch_size = targets.size(0)
-        total_loss += loss.detach() * batch_size
-        total_correct += (logits.argmax(dim=1) == targets).sum()
+        total_loss += float(loss.item()) * batch_size
+        total_correct += int((logits.argmax(dim=1) == targets).sum().item())
         total_samples += batch_size
 
     return {
-        "loss": total_loss.item() / max(1, total_samples),
-        "accuracy": total_correct.item() / max(1, total_samples),
+        "loss": total_loss / max(1, total_samples),
+        "accuracy": total_correct / max(1, total_samples),
     }
 
 
@@ -251,7 +253,7 @@ def run_experiment(config: ExperimentConfig) -> Path:
     # GradScaler is only needed for float16; bfloat16 has the same exponent range
     # as float32 so loss scaling is unnecessary and the scaler would be a no-op.
     use_bf16 = use_amp and device.type == "cuda" and torch.cuda.is_bf16_supported()
-    scaler = torch.amp.GradScaler("cuda", enabled=use_amp and not use_bf16) if device.type == "cuda" else None
+    scaler = GradScaler("cuda", enabled=use_amp and not use_bf16) if device.type == "cuda" else None
     data_loaders = build_dataloaders(config.dataset, config.training, device.type)
 
     model = build_model(config.model, config.dataset.name)
@@ -270,7 +272,11 @@ def run_experiment(config: ExperimentConfig) -> Path:
     model = privacy_artifacts.model
     optimizer = privacy_artifacts.optimizer
     train_loader = privacy_artifacts.train_loader
-    criterion = nn.CrossEntropyLoss()
+    eval_criterion = nn.CrossEntropyLoss()
+    if privacy_artifacts.criterion is not None:
+        train_criterion = privacy_artifacts.criterion
+    else:
+        train_criterion = eval_criterion
 
     run_dir = create_run_dir(config.training.output_dir, config.training.experiment_name)
     write_resolved_config(config, run_dir)
@@ -293,7 +299,7 @@ def run_experiment(config: ExperimentConfig) -> Path:
             model=model,
             data_loader=train_loader,
             optimizer=optimizer,
-            criterion=criterion,
+            criterion=train_criterion,
             device=device,
             channels_last=config.runtime.channels_last,
             use_amp=use_amp,
@@ -303,7 +309,7 @@ def run_experiment(config: ExperimentConfig) -> Path:
         eval_metrics = _evaluate(
             model=model,
             data_loader=data_loaders.eval,
-            criterion=criterion,
+            criterion=eval_criterion,
             device=device,
             channels_last=config.runtime.channels_last,
             use_amp=use_amp,
