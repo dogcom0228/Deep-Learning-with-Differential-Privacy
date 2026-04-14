@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, cast
@@ -60,6 +61,49 @@ def _autocast_context(enabled: bool, device: torch.device):
     return nullcontext()
 
 
+class _CudaPrefetcher:
+    """Overlap CPU→GPU transfer with GPU compute using a side CUDA stream."""
+
+    def __init__(self, loader: DataLoader, device: torch.device, channels_last: bool = False) -> None:
+        self._loader = loader
+        self._device = device
+        self._channels_last = channels_last
+        self._stream = torch.cuda.Stream(device=device)
+
+    def __iter__(self):
+        self._iter = iter(self._loader)
+        self._next: tuple[torch.Tensor, torch.Tensor] | None = None
+        self._preload()
+        return self
+
+    def _preload(self) -> None:
+        try:
+            inputs, targets = next(self._iter)
+        except StopIteration:
+            self._next = None
+            return
+        with torch.cuda.stream(self._stream):
+            inputs = inputs.to(self._device, non_blocking=True)
+            targets = targets.to(self._device, non_blocking=True)
+            if self._channels_last and inputs.ndim == 4:
+                inputs = inputs.contiguous(memory_format=torch.channels_last)
+        self._next = (inputs, targets)
+
+    def __next__(self) -> tuple[torch.Tensor, torch.Tensor]:
+        if self._next is None:
+            raise StopIteration
+        torch.cuda.current_stream(self._device).wait_stream(self._stream)
+        inputs, targets = self._next
+        self._preload()
+        return inputs, targets
+
+    def __len__(self) -> int:
+        return len(self._loader)
+
+
+_PROGRESS_SYNC_INTERVAL = 10  # sync GPU→CPU for progress bar every N steps
+
+
 def _train_one_epoch(
     model: nn.Module,
     data_loader: DataLoader,
@@ -71,14 +115,17 @@ def _train_one_epoch(
     scaler: torch.amp.GradScaler | None,
 ) -> dict[str, float]:
     model.train()
-    total_loss = 0.0
-    total_correct = 0
+    use_prefetch = device.type == "cuda"
+    total_loss = torch.zeros(1, device=device) if use_prefetch else torch.zeros(1)
+    total_correct = torch.zeros(1, device=device, dtype=torch.long) if use_prefetch else torch.zeros(1, dtype=torch.long)
     total_samples = 0
 
-    progress = tqdm(data_loader, leave=False, desc="train")
-    for inputs, targets in progress:
-        inputs = _prepare_batch(inputs, device, channels_last)
-        targets = targets.to(device, non_blocking=device.type == "cuda")
+    loader: Any = _CudaPrefetcher(data_loader, device, channels_last) if use_prefetch else data_loader
+    progress = tqdm(loader, leave=False, desc="train", total=len(data_loader))
+    for step, (inputs, targets) in enumerate(progress):
+        if not use_prefetch:
+            inputs = _prepare_batch(inputs, device, channels_last)
+            targets = targets.to(device)
 
         optimizer.zero_grad(set_to_none=True)
         with _autocast_context(enabled=use_amp, device=device):
@@ -93,17 +140,17 @@ def _train_one_epoch(
             loss.backward()
             optimizer.step()
 
-        predictions = logits.argmax(dim=1)
         batch_size = targets.size(0)
-        total_loss += loss.item() * batch_size
-        total_correct += (predictions == targets).sum().item()
+        total_loss += loss.detach() * batch_size
+        total_correct += (logits.detach().argmax(dim=1) == targets).sum()
         total_samples += batch_size
 
-        progress.set_postfix(loss=f"{loss.item():.4f}")
+        if step % _PROGRESS_SYNC_INTERVAL == 0:
+            progress.set_postfix(loss=f"{loss.item():.4f}")
 
     return {
-        "loss": total_loss / max(1, total_samples),
-        "accuracy": total_correct / max(1, total_samples),
+        "loss": total_loss.item() / max(1, total_samples),
+        "accuracy": total_correct.item() / max(1, total_samples),
     }
 
 
@@ -117,31 +164,38 @@ def _evaluate(
     use_amp: bool,
 ) -> dict[str, float]:
     model.eval()
-    total_loss = 0.0
-    total_correct = 0
+    use_prefetch = device.type == "cuda"
+    total_loss = torch.zeros(1, device=device) if use_prefetch else torch.zeros(1)
+    total_correct = torch.zeros(1, device=device, dtype=torch.long) if use_prefetch else torch.zeros(1, dtype=torch.long)
     total_samples = 0
 
-    progress = tqdm(data_loader, leave=False, desc="eval")
+    loader: Any = _CudaPrefetcher(data_loader, device, channels_last) if use_prefetch else data_loader
+    progress = tqdm(loader, leave=False, desc="eval", total=len(data_loader))
     for inputs, targets in progress:
-        inputs = _prepare_batch(inputs, device, channels_last)
-        targets = targets.to(device, non_blocking=device.type == "cuda")
+        if not use_prefetch:
+            inputs = _prepare_batch(inputs, device, channels_last)
+            targets = targets.to(device)
         with _autocast_context(enabled=use_amp, device=device):
             logits = model(inputs)
             loss = criterion(logits, targets)
 
-        predictions = logits.argmax(dim=1)
         batch_size = targets.size(0)
-        total_loss += loss.item() * batch_size
-        total_correct += (predictions == targets).sum().item()
+        total_loss += loss.detach() * batch_size
+        total_correct += (logits.argmax(dim=1) == targets).sum()
         total_samples += batch_size
 
     return {
-        "loss": total_loss / max(1, total_samples),
-        "accuracy": total_correct / max(1, total_samples),
+        "loss": total_loss.item() / max(1, total_samples),
+        "accuracy": total_correct.item() / max(1, total_samples),
     }
 
 
 def run_experiment(config: ExperimentConfig) -> Path:
+    # Suppress known harmless warnings from dependencies
+    warnings.filterwarnings("ignore", message="Secure RNG turned off", category=UserWarning)
+    warnings.filterwarnings("ignore", message="Full backward hook", category=UserWarning)
+    warnings.filterwarnings("ignore", message=".*align should be passed.*", category=DeprecationWarning)
+
     setup_logging()
     set_seed(config.training.seed, config.runtime.deterministic)
 
@@ -160,11 +214,12 @@ def run_experiment(config: ExperimentConfig) -> Path:
     # Override all three for private runs.
     import dataclasses
     if config.privacy.enabled:
+        dp_workers = min(config.dataset.num_workers, 4)
         safe_dataset_config = dataclasses.replace(
             config.dataset,
-            num_workers=0,
-            pin_memory=False,
-            persistent_workers=False,
+            num_workers=dp_workers,
+            pin_memory=False,  # avoid CUDA race with Opacus hooks
+            persistent_workers=dp_workers > 0,
         )
         safe_runtime = dataclasses.replace(config.runtime, channels_last=False)
         # Ghost clipping is mathematically equivalent to hooks but uses O(1) extra
