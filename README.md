@@ -29,9 +29,6 @@
 │   ├── privacy.py
 │   ├── train.py
 │   └── utils.py
-├── cifar10.py
-├── mnist.py
-├── dp_optimizer.py
 ├── environment.yml
 ├── pyproject.toml
 └── requirements.txt
@@ -52,13 +49,6 @@ pip install -e . --no-deps
 
 ## 執行方式
 
-直接跑預設入口：
-
-```bash
-python mnist.py
-python cifar10.py
-```
-
 使用統一 CLI：
 
 ```bash
@@ -66,11 +56,18 @@ python -m dp_sgd train --config configs/mnist-dp.yaml
 python -m dp_sgd train --config configs/cifar10-dp.yaml
 ```
 
+或透過安裝後的指令：
+
+```bash
+dp-sgd train --config configs/mnist-dp.yaml
+dp-sgd train --config configs/cifar10-dp.yaml
+```
+
 常見覆寫：
 
 ```bash
-python mnist.py --epochs 10 --override privacy.noise_multiplier=1.2
-python cifar10.py --non-private --device cuda
+python -m dp_sgd train --config configs/mnist-dp.yaml --epochs 10 --override privacy.noise_multiplier=1.2
+python -m dp_sgd train --config configs/cifar10-dp.yaml --non-private --device cuda
 ```
 
 ## 實作重點
