@@ -44,7 +44,7 @@ runtime:
   deterministic: false
 
 training:
-  epochs: 15
+  epochs: 100
   batch_size: 256
   eval_batch_size: 512
   seed: 42
