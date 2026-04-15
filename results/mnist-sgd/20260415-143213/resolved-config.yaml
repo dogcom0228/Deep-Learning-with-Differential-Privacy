@@ -1,0 +1,47 @@
+dataset:
+  name: mnist
+  root: data
+  download: true
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  augment: false
+model:
+  name: mnist_cnn
+  num_classes: 10
+  width: 32
+  dropout: 0.0
+optimizer:
+  name: sgd
+  lr: 0.15
+  momentum: 0.9
+  weight_decay: 0.0
+  nesterov: false
+scheduler:
+  name: cosine
+  warmup_epochs: 1
+  min_lr: 0.001
+privacy:
+  enabled: false
+  noise_multiplier: 0.0
+  max_grad_norm: 1.0
+  delta: 1.0e-05
+  poisson_sampling: false
+  clipping: flat
+  grad_sample_mode: hooks
+  secure_mode: false
+runtime:
+  device: auto
+  compile: false
+  allow_tf32: true
+  channels_last: true
+  amp: true
+  deterministic: false
+training:
+  epochs: 100
+  batch_size: 4096
+  eval_batch_size: 1024
+  seed: 42
+  log_every: 20
+  output_dir: results
+  experiment_name: mnist-sgd
