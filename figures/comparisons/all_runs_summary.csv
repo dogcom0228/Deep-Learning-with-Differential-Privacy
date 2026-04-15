@@ -1,0 +1,9 @@
+dataset,experiment,run_id,privacy_enabled,best_eval_accuracy,best_eval_epoch,final_eval_accuracy,final_epsilon,final_learning_rate,cfg.privacy.enabled,cfg.privacy.noise_multiplier,cfg.privacy.max_grad_norm,cfg.optimizer.lr,cfg.training.batch_size,cfg.optimizer.momentum,cfg.optimizer.weight_decay,cfg.scheduler.warmup_epochs,cfg.dataset.augment,cfg.runtime.amp,cfg.runtime.channels_last,cfg.runtime.compile,cfg.model.width,cfg.model.dropout,cfg.dataset.name,cfg.model.name,cfg.optimizer.nesterov,cfg.scheduler.min_lr,cfg.privacy.poisson_sampling,cfg.privacy.grad_sample_mode
+cifar10,cifar10-dp-sgd,20260415-024451,True,0.4771,95,0.4765,6.793568,0.0001,True,1.0,1.0,0.1,512,0.9,0.0005,5,True,False,False,False,32,0.0,cifar10,cifar_resnet18,True,0.0001,True,ghost
+mnist,mnist-dp-sgd,20260415-015205,True,0.9485,91,0.948,21.237623,0.0001,True,1.0,1.0,0.5,4096,0.9,0.0,5,False,False,False,False,32,0.0,mnist,mnist_cnn,True,0.0001,True,ghost
+mnist,mnist-dp-sgd,20260415-020057,True,0.9464,95,0.9454,15.19766,0.0001,True,1.2,1.0,0.5,4096,0.9,0.0,5,False,False,False,False,32,0.0,mnist,mnist_cnn,True,0.0001,True,ghost
+mnist,mnist-dp-sgd,20260415-020942,True,0.945,88,0.945,11.786292,0.0001,True,1.4,1.0,0.5,4096,0.9,0.0,5,False,False,False,False,32,0.0,mnist,mnist_cnn,True,0.0001,True,ghost
+mnist,mnist-dp-sgd,20260415-021816,True,0.9449,88,0.9442,9.616807,0.0001,True,1.6,1.0,0.5,4096,0.9,0.0,5,False,False,False,False,32,0.0,mnist,mnist_cnn,True,0.0001,True,ghost
+mnist,mnist-dp-sgd,20260415-022659,True,0.9409,94,0.9406,8.116787,0.0001,True,1.8,1.0,0.5,4096,0.9,0.0,5,False,False,False,False,32,0.0,mnist,mnist_cnn,True,0.0001,True,ghost
+mnist,mnist-dp-sgd,20260415-023553,True,0.9413,96,0.941,7.021243,0.0001,True,2.0,1.0,0.5,4096,0.9,0.0,5,False,False,False,False,32,0.0,mnist,mnist_cnn,True,0.0001,True,ghost
+mnist,mnist-sgd,20260415-143213,False,0.9837,76,0.9827,,0.001,False,0.0,1.0,0.15,4096,0.9,0.0,1,False,True,True,False,32,0.0,mnist,mnist_cnn,False,0.001,False,hooks

@@ -1,0 +1,4 @@
+experiment,dataset,runs,varying_parameters,best_eval_accuracy,lowest_epsilon
+cifar10-dp-sgd,cifar10,1,none,0.4771,6.793568
+mnist-dp-sgd,mnist,6,privacy.noise_multiplier,0.9485,7.021243
+mnist-sgd,mnist,1,none,0.9837,
